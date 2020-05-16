@@ -20,30 +20,18 @@
 
 package net.sf.eclipsecs.core.transformer;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Map;
 
 import net.sf.eclipsecs.core.util.CheckstyleLog;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.preferences.IScopeContext;
-import org.eclipse.jdt.core.JavaCore;
-import org.eclipse.jdt.internal.corext.fix.CleanUpConstants;
-import org.eclipse.jdt.internal.corext.fix.CleanUpPreferenceUtil;
-import org.eclipse.jdt.internal.ui.preferences.PreferencesAccess;
-import org.eclipse.jdt.internal.ui.preferences.cleanup.CleanUpProfileManager;
-import org.eclipse.jdt.internal.ui.preferences.cleanup.CleanUpProfileVersioner;
-import org.eclipse.jdt.internal.ui.preferences.formatter.FormatterProfileManager;
-import org.eclipse.jdt.internal.ui.preferences.formatter.FormatterProfileStore;
-import org.eclipse.jdt.internal.ui.preferences.formatter.IProfileVersioner;
-import org.eclipse.jdt.internal.ui.preferences.formatter.ProfileManager;
-import org.eclipse.jdt.internal.ui.preferences.formatter.ProfileManager.CustomProfile;
-import org.eclipse.jdt.internal.ui.preferences.formatter.ProfileManager.Profile;
-import org.eclipse.jdt.internal.ui.preferences.formatter.ProfileStore;
-import org.eclipse.jdt.internal.ui.preferences.formatter.ProfileVersioner;
-import org.osgi.service.prefs.BackingStoreException;
+import org.eclipse.core.runtime.NullProgressMonitor;
 
 /**
  * Class for writing a new eclipse-configuration-file. Gets used by class Transformer. A new
@@ -91,59 +79,15 @@ public class FormatterConfigWriter {
   }
 
   private void writeCleanupSettings(final Map<String, String> settings) {
+    try(ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      XmlProfileWriter.writeCleanupProfileToStream(bos, "CheckStyle-Generated", settings);
 
-    PreferencesAccess access = PreferencesAccess.getOriginalPreferences();
-
-    IScopeContext instanceScope = access.getInstanceScope();
-    IScopeContext scope = access.getProjectScope(mProject);
-
-    IProfileVersioner versioner = new CleanUpProfileVersioner();
-    ProfileStore profilesStore = new ProfileStore(CleanUpConstants.CLEANUP_PROFILES, versioner);
-    try {
-
-      List<Profile> profiles = profilesStore.readProfiles(instanceScope);
-
-      if (profiles == null) {
-        profiles = new ArrayList<>();
+      IFile settingsFile = mProject.getFile("checkstype-cleanup-settings.xml");
+      try (InputStream stream = new ByteArrayInputStream(bos.toByteArray())) {
+        settingsFile.create(stream, true, new NullProgressMonitor());
       }
-      profiles.addAll(CleanUpPreferenceUtil.getBuiltInProfiles());
-
-      ProfileManager manager = new CleanUpProfileManager(profiles, scope, access, versioner);
-
-      CustomProfile myProfile = (CustomProfile) manager
-              .getProfile(ProfileManager.ID_PREFIX + mNewProfileName);
-
-      if (myProfile == null) {
-        // take current settings and create new profile
-        Profile current = manager.getSelected();
-        myProfile = new CustomProfile(mNewProfileName, current.getSettings(),
-                versioner.getCurrentVersion(), versioner.getProfileKind());
-        manager.addProfile(myProfile);
-      }
-
-      Map<String, String> joinedSettings = myProfile.getSettings();
-      joinedSettings.putAll(settings);
-
-      myProfile.setSettings(joinedSettings);
-      manager.setSelected(myProfile);
-
-      // writes profiles to the workspace profile store
-      profilesStore.writeProfiles(manager.getSortedProfiles(), instanceScope);
-
-      // commits changes to the project profile settings
-      manager.commitChanges(scope);
-
-      scope.getNode(JDT_UI_PLUGINID).flush();
-      scope.getNode(JavaCore.PLUGIN_ID).flush();
-      if (scope != instanceScope) {
-        instanceScope.getNode(JDT_UI_PLUGINID).flush();
-        instanceScope.getNode(JavaCore.PLUGIN_ID).flush();
-      }
-
-    } catch (CoreException e) {
-      CheckstyleLog.log(e, "Error storing cleanup profile");
-    } catch (BackingStoreException e) {
-      CheckstyleLog.log(e, "Error storing cleanup profile");
+    } catch (IOException|CoreException e) {
+      CheckstyleLog.log(e, "Error saving cleanup profile");
     }
   }
 
@@ -152,60 +96,18 @@ public class FormatterConfigWriter {
    *
    * @param settings
    *          All the settings.
+   * @throws CoreException
    */
   private void writeFormatterSettings(final Map<String, String> settings) {
+    try(ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      XmlProfileWriter.writeFormatterProfileToStream(bos, "CheckStyle-Generated", settings);
 
-    PreferencesAccess access = PreferencesAccess.getOriginalPreferences();
-
-    IScopeContext instanceScope = access.getInstanceScope();
-    IScopeContext scope = access.getProjectScope(mProject);
-
-    IProfileVersioner versioner = new ProfileVersioner();
-    ProfileStore profilesStore = new FormatterProfileStore(versioner);
-    try {
-
-      List<Profile> profiles = profilesStore.readProfiles(instanceScope);
-
-      if (profiles == null) {
-        profiles = new ArrayList<>();
+      IFile settingsFile = mProject.getFile("checkstype-formatter-settings.xml");
+      try (InputStream stream = new ByteArrayInputStream(bos.toByteArray())) {
+        settingsFile.create(stream, true, new NullProgressMonitor());
       }
-
-      ProfileManager manager = new FormatterProfileManager(profiles, scope, access, versioner);
-
-      CustomProfile myProfile = (CustomProfile) manager
-              .getProfile(ProfileManager.ID_PREFIX + mNewProfileName);
-
-      if (myProfile == null) {
-        // take current settings and create new profile
-        Profile current = manager.getSelected();
-        myProfile = new CustomProfile(mNewProfileName, current.getSettings(),
-                versioner.getCurrentVersion(), versioner.getProfileKind());
-        manager.addProfile(myProfile);
-      }
-
-      Map<String, String> joinedSettings = myProfile.getSettings();
-      joinedSettings.putAll(settings);
-
-      myProfile.setSettings(joinedSettings);
-      manager.setSelected(myProfile);
-
-      // writes profiles to the workspace profile store
-      profilesStore.writeProfiles(manager.getSortedProfiles(), instanceScope);
-
-      // commits changes to the project profile settings
-      manager.commitChanges(scope);
-
-      scope.getNode(JDT_UI_PLUGINID).flush();
-      scope.getNode(JavaCore.PLUGIN_ID).flush();
-      if (scope != instanceScope) {
-        instanceScope.getNode(JDT_UI_PLUGINID).flush();
-        instanceScope.getNode(JavaCore.PLUGIN_ID).flush();
-      }
-
-    } catch (CoreException e) {
-      CheckstyleLog.log(e, "Error storing formatter profile");
-    } catch (BackingStoreException e) {
-      CheckstyleLog.log(e, "Error storing formatter profile");
+    } catch (IOException|CoreException e) {
+      CheckstyleLog.log(e, "Error saving formatter profile");
     }
   }
 }
